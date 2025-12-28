@@ -1,0 +1,247 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vietnamese Listening Loop</title>
+  <style>
+    :root {
+      --bg-start: #e8f1ff;
+      --bg-end: #f8fbff;
+      --text: #1f2a3d;
+      --muted: #50607a;
+      --button-bg: #dfe9f7;
+      --button-text: #1f2a3d;
+      --button-hover: #cad9f1;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(160deg, var(--bg-start), var(--bg-end));
+      font-family: "Palatino Linotype", "Book Antiqua", Garamond, "Segoe UI", sans-serif;
+      color: var(--text);
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.82);
+      border: 1px solid rgba(79, 107, 142, 0.12);
+      border-radius: 18px;
+      padding: 32px 28px;
+      box-shadow: 0 12px 40px rgba(26, 52, 82, 0.08);
+      max-width: 720px;
+      width: min(88vw, 720px);
+      text-align: center;
+    }
+
+    h1 {
+      margin: 0 0 10px;
+      font-size: 1.6rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      color: var(--muted);
+    }
+
+    p.subtitle {
+      margin: 0 0 28px;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+      font-size: 0.95rem;
+    }
+
+    #translation {
+      margin: 0 0 32px;
+      font-size: 2.35rem;
+      line-height: 1.3;
+      letter-spacing: 0.01em;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 12px;
+      padding: 12px 22px;
+      font-size: 1rem;
+      letter-spacing: 0.02em;
+      color: var(--button-text);
+      background: var(--button-bg);
+      cursor: pointer;
+      transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+      box-shadow: 0 6px 18px rgba(30, 56, 86, 0.08);
+      min-width: 120px;
+    }
+
+    button:hover {
+      background: var(--button-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 10px 22px rgba(30, 56, 86, 0.12);
+    }
+
+    button:active {
+      transform: translateY(0);
+      box-shadow: 0 4px 12px rgba(30, 56, 86, 0.12);
+    }
+
+    button:focus-visible {
+      outline: 2px solid #8ba9dc;
+      outline-offset: 3px;
+    }
+  </style>
+</head>
+<body>
+  <main class="card" aria-live="polite">
+    <h1>Vietnamese Listening</h1>
+    <p class="subtitle">Audio-first sentences, calm loop.</p>
+    <p id="translation">Loading sentences…</p>
+    <div class="controls">
+      <button id="repeatBtn" type="button">Repeat</button>
+      <button id="nextBtn" type="button">Next</button>
+    </div>
+  </main>
+
+  <script>
+    let sentences = [];
+
+    const translationEl = document.getElementById('translation');
+    const repeatBtn = document.getElementById('repeatBtn');
+    const nextBtn = document.getElementById('nextBtn');
+
+    let currentIndex = 0;
+    let selectedVoice = null;
+
+    function pickVoice() {
+      const voices = speechSynthesis.getVoices();
+      if (!voices.length) return null;
+      const viVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('vi'));
+      if (viVoices.length) return viVoices[0];
+      const nameMatch = voices.find(v => v.name && v.name.toLowerCase().includes('vietnam'));
+      if (nameMatch) return nameMatch;
+      return voices[0];
+    }
+
+    function playCurrentSentence() {
+      const sentence = sentences[currentIndex];
+      if (!sentence) return;
+
+      const utterance = new SpeechSynthesisUtterance(sentence.vi);
+      utterance.lang = 'vi-VN';
+      utterance.rate = 0.7;
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+
+      speechSynthesis.cancel();
+      speechSynthesis.speak(utterance);
+    }
+
+    function ensureVoiceThenPlay() {
+      if (selectedVoice) {
+        playCurrentSentence();
+        return;
+      }
+
+      const voiceNow = pickVoice();
+      if (voiceNow) {
+        selectedVoice = voiceNow;
+        playCurrentSentence();
+        return;
+      }
+
+      // Some browsers load voices asynchronously.
+      speechSynthesis.onvoiceschanged = () => {
+        if (!selectedVoice) {
+          const voiceLater = pickVoice();
+          if (voiceLater) {
+            selectedVoice = voiceLater;
+            playCurrentSentence();
+            speechSynthesis.onvoiceschanged = null;
+          }
+        }
+      };
+    }
+
+    function updateTranslation() {
+      translationEl.textContent = sentences[currentIndex]?.en || '';
+    }
+
+    function goToNextSentence() {
+      if (!sentences.length) return;
+      currentIndex = (currentIndex + 1) % sentences.length;
+      updateTranslation();
+      ensureVoiceThenPlay();
+    }
+
+    repeatBtn.addEventListener('click', () => {
+      ensureVoiceThenPlay();
+    });
+
+    nextBtn.addEventListener('click', () => {
+      goToNextSentence();
+    });
+
+    function parseCsv(text) {
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (!lines.length) return [];
+
+      // Drop header if present.
+      if (/^\s*Vietnamese\s*,\s*English/i.test(lines[0])) {
+        lines.shift();
+      }
+
+      return lines
+        .map(line => {
+          const commaIndex = line.indexOf(',');
+          if (commaIndex === -1) return null;
+          const vi = line.slice(0, commaIndex).trim();
+          const en = line.slice(commaIndex + 1).trim();
+          if (!vi || !en) return null;
+          return { vi, en };
+        })
+        .filter(Boolean);
+    }
+
+    async function loadSentencesFromCsv() {
+      const response = await fetch('vietnamese_sentences_set1.csv');
+      if (!response.ok) {
+        throw new Error('Failed to load CSV');
+      }
+      const csvText = await response.text();
+      return parseCsv(csvText);
+    }
+
+    async function start() {
+      try {
+        const loaded = await loadSentencesFromCsv();
+        sentences = loaded;
+      } catch (err) {
+        console.error(err);
+        translationEl.textContent = 'Could not load sentences.';
+        return;
+      }
+
+      if (!sentences.length) {
+        translationEl.textContent = 'No sentences found.';
+        return;
+      }
+
+      currentIndex = 0;
+      updateTranslation();
+      ensureVoiceThenPlay();
+    }
+
+    document.addEventListener('DOMContentLoaded', start);
+  </script>
+</body>
+</html>
