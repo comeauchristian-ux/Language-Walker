@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -53,37 +53,6 @@
       font-size: 0.95rem;
     }
 
-    .file-row {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin: 0 0 18px;
-    }
-
-    .file-row label {
-      font-weight: 600;
-      letter-spacing: 0.01em;
-      color: var(--muted);
-    }
-
-    select {
-      border: 1px solid rgba(79, 107, 142, 0.24);
-      border-radius: 10px;
-      padding: 10px 12px;
-      background: rgba(255, 255, 255, 0.9);
-      color: var(--text);
-      font-size: 0.98rem;
-      box-shadow: 0 6px 18px rgba(30, 56, 86, 0.08);
-      min-width: 200px;
-    }
-
-    select:focus-visible {
-      outline: 2px solid #8ba9dc;
-      outline-offset: 2px;
-    }
-
     #translation {
       margin: 0 0 32px;
       font-size: 2.35rem;
@@ -135,11 +104,7 @@
   <main class="card" aria-live="polite">
     <h1>Vietnamese Listening</h1>
     <p class="subtitle">Audio-first sentences, calm loop.</p>
-    <div class="file-row">
-      <label for="fileSelect">Sentence file:</label>
-      <select id="fileSelect" aria-label="Choose sentence file"></select>
-    </div>
-    <p id="translation">Loading sentences…</p>
+    <p id="translation">Loading sentences�</p>
     <div class="controls">
       <button id="repeatBtn" type="button">Repeat</button>
       <button id="nextBtn" type="button">Next</button>
@@ -149,14 +114,7 @@
   <script>
     let sentences = [];
 
-    const csvFiles = [
-      'vietnamese_home1.csv',
-      'vietnamese_sentences_set1.csv',
-      'vietnamese_sentences_set2.csv',
-    ];
-
     const translationEl = document.getElementById('translation');
-    const fileSelect = document.getElementById('fileSelect');
     const repeatBtn = document.getElementById('repeatBtn');
     const nextBtn = document.getElementById('nextBtn');
 
@@ -218,38 +176,6 @@
       translationEl.textContent = sentences[currentIndex]?.en || '';
     }
 
-    function populateFileSelect() {
-      fileSelect.innerHTML = '';
-      csvFiles.forEach(fileName => {
-        const option = document.createElement('option');
-        option.value = fileName;
-        option.textContent = fileName.replace(/\.csv$/i, '').replace(/[_-]+/g, ' ');
-        fileSelect.appendChild(option);
-      });
-    }
-
-    async function setActiveFile(fileName) {
-      translationEl.textContent = 'Loading sentences...';
-      speechSynthesis.cancel();
-      try {
-        const loaded = await loadSentencesFromCsv(fileName);
-        sentences = loaded;
-      } catch (err) {
-        console.error(err);
-        translationEl.textContent = 'Could not load sentences.';
-        return;
-      }
-
-      if (!sentences.length) {
-        translationEl.textContent = 'No sentences found.';
-        return;
-      }
-
-      currentIndex = 0;
-      updateTranslation();
-      ensureVoiceThenPlay();
-    }
-
     function goToNextSentence() {
       if (!sentences.length) return;
       currentIndex = (currentIndex + 1) % sentences.length;
@@ -263,11 +189,6 @@
 
     nextBtn.addEventListener('click', () => {
       goToNextSentence();
-    });
-
-    fileSelect.addEventListener('change', () => {
-      const nextFile = fileSelect.value;
-      setActiveFile(nextFile);
     });
 
     function parseCsv(text) {
@@ -291,8 +212,8 @@
         .filter(Boolean);
     }
 
-    async function loadSentencesFromCsv(fileName) {
-      const response = await fetch(fileName);
+    async function loadSentencesFromCsv() {
+      const response = await fetch('vietnamese_sentences_set2.csv');
       if (!response.ok) {
         throw new Error('Failed to load CSV');
       }
@@ -301,13 +222,27 @@
     }
 
     async function start() {
-      populateFileSelect();
-      const initialFile = fileSelect.value || csvFiles[0];
-      fileSelect.value = initialFile;
-      await setActiveFile(initialFile);
+      try {
+        const loaded = await loadSentencesFromCsv();
+        sentences = loaded;
+      } catch (err) {
+        console.error(err);
+        translationEl.textContent = 'Could not load sentences.';
+        return;
+      }
+
+      if (!sentences.length) {
+        translationEl.textContent = 'No sentences found.';
+        return;
+      }
+
+      currentIndex = 0;
+      updateTranslation();
+      ensureVoiceThenPlay();
     }
 
     document.addEventListener('DOMContentLoaded', start);
   </script>
 </body>
 </html>
+
