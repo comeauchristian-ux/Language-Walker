@@ -93,6 +93,23 @@
       color: var(--text);
     }
 
+    .vi-text {
+      margin: -12px 0 20px;
+      font-size: 1.65rem;
+      line-height: 1.35;
+      color: var(--muted);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      transition: opacity 320ms ease;
+    }
+
+    .vi-text.vi-visible {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+
     .controls {
       display: flex;
       gap: 12px;
@@ -140,6 +157,7 @@
       <select id="fileSelect" aria-label="Choose sentence file"></select>
     </div>
     <p id="translation">Loading sentences…</p>
+    <p id="viText" class="vi-text" aria-hidden="true"></p>
     <div class="controls">
       <button id="repeatBtn" type="button">Repeat</button>
       <button id="nextBtn" type="button">Next</button>
@@ -156,12 +174,21 @@
     ];
 
     const translationEl = document.getElementById('translation');
+    const viTextEl = document.getElementById('viText');
     const fileSelect = document.getElementById('fileSelect');
     const repeatBtn = document.getElementById('repeatBtn');
     const nextBtn = document.getElementById('nextBtn');
 
     let currentIndex = 0;
     let selectedVoice = null;
+    let viRevealTimeoutId = null;
+    let renderToken = 0;
+
+    /*
+      Defaults: update VI_REVEAL_DELAY_MS for the 1200ms reveal delay,
+      and adjust the fade duration in the ".vi-text" CSS transition.
+    */
+    const VI_REVEAL_DELAY_MS = 1200;
 
     function pickVoice() {
       const voices = speechSynthesis.getVoices();
@@ -185,6 +212,7 @@
       }
 
       speechSynthesis.cancel();
+      handleAudioPlayStart();
       speechSynthesis.speak(utterance);
     }
 
@@ -215,7 +243,12 @@
     }
 
     function updateTranslation() {
-      translationEl.textContent = sentences[currentIndex]?.en || '';
+      const sentence = sentences[currentIndex];
+      translationEl.textContent = sentence?.en || '';
+      viTextEl.textContent = sentence?.vi || '';
+      renderToken += 1;
+      clearViRevealTimeout();
+      hideViText();
     }
 
     function populateFileSelect() {
@@ -270,6 +303,38 @@
       setActiveFile(nextFile);
     });
 
+    function hideViText() {
+      viTextEl.classList.remove('vi-visible');
+      viTextEl.setAttribute('aria-hidden', 'true');
+    }
+
+    function showViText() {
+      viTextEl.classList.add('vi-visible');
+      viTextEl.setAttribute('aria-hidden', 'false');
+    }
+
+    function clearViRevealTimeout() {
+      if (viRevealTimeoutId) {
+        clearTimeout(viRevealTimeoutId);
+        viRevealTimeoutId = null;
+      }
+    }
+
+    function scheduleViReveal() {
+      clearViRevealTimeout();
+      const tokenAtSchedule = renderToken;
+      viRevealTimeoutId = window.setTimeout(() => {
+        if (tokenAtSchedule !== renderToken) return;
+        showViText();
+      }, VI_REVEAL_DELAY_MS);
+    }
+
+    function handleAudioPlayStart() {
+      clearViRevealTimeout();
+      hideViText();
+      scheduleViReveal();
+    }
+
     function parseCsv(text) {
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
       if (!lines.length) return [];
@@ -308,6 +373,16 @@
     }
 
     document.addEventListener('DOMContentLoaded', start);
+    document.addEventListener('keydown', (event) => {
+      const tag = event.target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'select' || tag === 'textarea' || event.target?.isContentEditable) {
+        return;
+      }
+      if (event.key === 'r' || event.key === 'R') {
+        clearViRevealTimeout();
+        showViText();
+      }
+    });
   </script>
 </body>
 </html>
