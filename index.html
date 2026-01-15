@@ -93,7 +93,7 @@
       color: var(--text);
     }
 
-    .vi-text {
+    .target-text {
       margin: -12px 0 20px;
       font-size: 1.65rem;
       line-height: 1.35;
@@ -104,7 +104,7 @@
       transition: opacity 320ms ease;
     }
 
-    .vi-text.vi-visible {
+    .target-text.is-visible {
       opacity: 1;
       visibility: visible;
       pointer-events: auto;
@@ -157,7 +157,7 @@
       <select id="fileSelect" aria-label="Choose sentence file"></select>
     </div>
     <p id="translation">Loading sentences…</p>
-    <p id="viText" class="vi-text" aria-hidden="true"></p>
+    <p id="targetText" class="target-text" aria-hidden="true"></p>
     <div class="controls">
       <button id="repeatBtn" type="button">Repeat</button>
       <button id="nextBtn" type="button">Next</button>
@@ -168,35 +168,39 @@
     let sentences = [];
 
     const csvFiles = [
+      'arabic.csv',
       'vietnamese_home1.csv',
       'vietnamese_sentences_set1.csv',
       'vietnamese_sentences_set2.csv',
     ];
 
     const translationEl = document.getElementById('translation');
-    const viTextEl = document.getElementById('viText');
+    const targetTextEl = document.getElementById('targetText');
     const fileSelect = document.getElementById('fileSelect');
     const repeatBtn = document.getElementById('repeatBtn');
     const nextBtn = document.getElementById('nextBtn');
 
     let currentIndex = 0;
-    let selectedVoice = null;
+    const voiceCache = new Map();
     let viRevealTimeoutId = null;
     let renderToken = 0;
 
     /*
       Defaults: update VI_REVEAL_DELAY_MS for the 1200ms reveal delay,
-      and adjust the fade duration in the ".vi-text" CSS transition.
+      and adjust the fade duration in the ".target-text" CSS transition.
     */
     const VI_REVEAL_DELAY_MS = 1200;
 
-    function pickVoice() {
+    function pickVoiceForLang(langCode) {
       const voices = speechSynthesis.getVoices();
       if (!voices.length) return null;
-      const viVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('vi'));
-      if (viVoices.length) return viVoices[0];
-      const nameMatch = voices.find(v => v.name && v.name.toLowerCase().includes('vietnam'));
-      if (nameMatch) return nameMatch;
+      const normalized = (langCode || '').toLowerCase();
+      if (normalized) {
+        const langVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith(normalized));
+        if (langVoices.length) return langVoices[0];
+        const nameMatch = voices.find(v => v.name && v.name.toLowerCase().includes(normalized));
+        if (nameMatch) return nameMatch;
+      }
       return voices[0];
     }
 
@@ -204,11 +208,12 @@
       const sentence = sentences[currentIndex];
       if (!sentence) return;
 
-      const utterance = new SpeechSynthesisUtterance(sentence.vi);
-      utterance.lang = 'vi-VN';
+      const utterance = new SpeechSynthesisUtterance(sentence.text);
+      utterance.lang = sentence.lang || 'vi-VN';
       utterance.rate = 0.7;
-      if (selectedVoice) {
-        utterance.voice = selectedVoice;
+      const voice = voiceCache.get(sentence.lang);
+      if (voice) {
+        utterance.voice = voice;
       }
 
       speechSynthesis.cancel();
@@ -217,24 +222,27 @@
     }
 
     function ensureVoiceThenPlay() {
-      if (selectedVoice) {
+      const sentence = sentences[currentIndex];
+      if (!sentence) return;
+      const cachedVoice = voiceCache.get(sentence.lang);
+      if (cachedVoice) {
         playCurrentSentence();
         return;
       }
 
-      const voiceNow = pickVoice();
+      const voiceNow = pickVoiceForLang(sentence.lang);
       if (voiceNow) {
-        selectedVoice = voiceNow;
+        voiceCache.set(sentence.lang, voiceNow);
         playCurrentSentence();
         return;
       }
 
       // Some browsers load voices asynchronously.
       speechSynthesis.onvoiceschanged = () => {
-        if (!selectedVoice) {
-          const voiceLater = pickVoice();
+        if (!voiceCache.get(sentence.lang)) {
+          const voiceLater = pickVoiceForLang(sentence.lang);
           if (voiceLater) {
-            selectedVoice = voiceLater;
+            voiceCache.set(sentence.lang, voiceLater);
             playCurrentSentence();
             speechSynthesis.onvoiceschanged = null;
           }
@@ -245,10 +253,10 @@
     function updateTranslation() {
       const sentence = sentences[currentIndex];
       translationEl.textContent = sentence?.en || '';
-      viTextEl.textContent = sentence?.vi || '';
+      targetTextEl.textContent = sentence?.text || '';
       renderToken += 1;
       clearViRevealTimeout();
-      hideViText();
+      hideTargetText();
     }
 
     function populateFileSelect() {
@@ -303,14 +311,14 @@
       setActiveFile(nextFile);
     });
 
-    function hideViText() {
-      viTextEl.classList.remove('vi-visible');
-      viTextEl.setAttribute('aria-hidden', 'true');
+    function hideTargetText() {
+      targetTextEl.classList.remove('is-visible');
+      targetTextEl.setAttribute('aria-hidden', 'true');
     }
 
-    function showViText() {
-      viTextEl.classList.add('vi-visible');
-      viTextEl.setAttribute('aria-hidden', 'false');
+    function showTargetText() {
+      targetTextEl.classList.add('is-visible');
+      targetTextEl.setAttribute('aria-hidden', 'false');
     }
 
     function clearViRevealTimeout() {
@@ -325,22 +333,32 @@
       const tokenAtSchedule = renderToken;
       viRevealTimeoutId = window.setTimeout(() => {
         if (tokenAtSchedule !== renderToken) return;
-        showViText();
+        showTargetText();
       }, VI_REVEAL_DELAY_MS);
     }
 
     function handleAudioPlayStart() {
       clearViRevealTimeout();
-      hideViText();
+      hideTargetText();
       scheduleViReveal();
+    }
+
+    function detectLanguageFromHeader(headerText) {
+      const normalized = headerText.trim().toLowerCase();
+      if (normalized.includes('arabic')) return { label: headerText.trim(), code: 'ar' };
+      if (normalized.includes('vietnam')) return { label: headerText.trim(), code: 'vi-VN' };
+      return { label: headerText.trim(), code: '' };
     }
 
     function parseCsv(text) {
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
       if (!lines.length) return [];
 
-      // Drop header if present.
-      if (/^\s*Vietnamese\s*,\s*English/i.test(lines[0])) {
+      let langMeta = { label: 'Vietnamese', code: 'vi-VN' };
+      const firstLine = lines[0];
+      const headerParts = firstLine.split(',');
+      if (headerParts.length >= 2 && headerParts[1].trim().toLowerCase() === 'english') {
+        langMeta = detectLanguageFromHeader(headerParts[0] || '');
         lines.shift();
       }
 
@@ -348,10 +366,10 @@
         .map(line => {
           const commaIndex = line.indexOf(',');
           if (commaIndex === -1) return null;
-          const vi = line.slice(0, commaIndex).trim();
+          const text = line.slice(0, commaIndex).trim();
           const en = line.slice(commaIndex + 1).trim();
-          if (!vi || !en) return null;
-          return { vi, en };
+          if (!text || !en) return null;
+          return { text, en, lang: langMeta.code, label: langMeta.label };
         })
         .filter(Boolean);
     }
@@ -380,7 +398,7 @@
       }
       if (event.key === 'r' || event.key === 'R') {
         clearViRevealTimeout();
-        showViText();
+        showTargetText();
       }
     });
   </script>
